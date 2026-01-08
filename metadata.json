@@ -1,0 +1,8 @@
+{
+  "name": "Copy of ACAMP Archery App",
+  "description": "Plataforma de gestão para atletas e técnicos da ACAMP Tiro com Arco, com registro de treinos, frequência, metas e sistema de recompensas BORTOCOINS.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
