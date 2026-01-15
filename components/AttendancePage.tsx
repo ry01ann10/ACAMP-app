@@ -15,22 +15,24 @@ const AttendancePage: React.FC<AttendancePageProps> = ({ user, onCheckIn }) => {
   const [viewDate, setViewDate] = useState(new Date());
 
   const today = new Date();
-  const dayOfWeek = today.getDay(); // 0 = Domingo
-  const isSunday = dayOfWeek === 0;
+  const todayStr = today.toISOString().split('T')[0];
+  const isSunday = today.getDay() === 0;
   
-  const todayStr = today.toDateString();
-  const hasCheckedInToday = user.attendance_history.some(d => new Date(d).toDateString() === todayStr);
+  const hasCheckedInToday = user.attendance_history.some(d => d === todayStr);
 
-  const handleCheckIn = () => {
-    if (isSunday || hasCheckedInToday) return;
+  const handleCheckIn = async () => {
+    if (isSunday || hasCheckedInToday || loading) return;
 
     setLoading(true);
-    setTimeout(() => {
-      onCheckIn(user.id);
+    try {
+      await onCheckIn(user.id);
       setShowSuccess(true);
-      setLoading(false);
       setTimeout(() => setShowSuccess(false), 3000);
-    }, 1200);
+    } catch (err) {
+      alert("Erro ao registrar presença. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const changeMonth = (offset: number) => {
@@ -40,7 +42,6 @@ const AttendancePage: React.FC<AttendancePageProps> = ({ user, onCheckIn }) => {
 
   const resetToToday = () => setViewDate(new Date());
 
-  // Lógica de Geração do Calendário Dinâmico
   const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
   const viewMonth = viewDate.getMonth();
   const viewYear = viewDate.getFullYear();
@@ -51,7 +52,6 @@ const AttendancePage: React.FC<AttendancePageProps> = ({ user, onCheckIn }) => {
   const calendarDays = Array.from({ length: totalDays }, (_, i) => i + 1);
   const paddingDays = Array.from({ length: firstDayOfMonth }, (_, i) => i);
 
-  // Estatísticas Reais baseadas no mês visualizado
   const attendancesInViewMonth = user.attendance_history.filter(d => {
     const date = new Date(d);
     return date.getMonth() === viewMonth && date.getFullYear() === viewYear;
@@ -62,7 +62,6 @@ const AttendancePage: React.FC<AttendancePageProps> = ({ user, onCheckIn }) => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {/* Card Principal de Ação - Apenas visível no mês atual */}
       {isViewingCurrentMonth && (
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
           <div className="flex items-center gap-3 mb-6">
@@ -106,49 +105,30 @@ const AttendancePage: React.FC<AttendancePageProps> = ({ user, onCheckIn }) => {
               >
                 {loading ? 'Sincronizando...' : 'Registrar Presença'}
               </button>
-              <div className="mt-6 flex items-center justify-center gap-2">
-                 <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-                 <p className="text-[10px] text-gray-400 uppercase tracking-widest font-black">Data: {today.toLocaleDateString('pt-BR')}</p>
-              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Histórico Visual Dinâmico com Navegação de Meses */}
       <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
-            <button 
-              onClick={() => changeMonth(-1)}
-              className="p-2 hover:bg-gray-50 rounded-full text-gray-400 transition-colors"
-            >
+            <button onClick={() => changeMonth(-1)} className="p-2 hover:bg-gray-50 rounded-full text-gray-400 transition-colors">
               <ChevronLeft size={20} />
             </button>
             <div className="text-center min-w-[120px]">
               <h3 className="font-bold text-gray-800 text-lg capitalize">{monthName}</h3>
               <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{viewYear}</p>
             </div>
-            <button 
-              onClick={() => changeMonth(1)}
-              className="p-2 hover:bg-gray-50 rounded-full text-gray-400 transition-colors"
-            >
+            <button onClick={() => changeMonth(1)} className="p-2 hover:bg-gray-50 rounded-full text-gray-400 transition-colors">
               <ChevronRight size={20} />
             </button>
           </div>
-          <div className="flex items-center gap-2">
-            {!isViewingCurrentMonth && (
-              <button 
-                onClick={resetToToday}
-                className="text-[9px] font-black text-acamp-blue uppercase bg-acamp-light px-3 py-1.5 rounded-lg border border-acamp-blue/10 active:scale-95 transition-all"
-              >
-                Voltar para Hoje
-              </button>
-            )}
-            <div className="bg-acamp-light px-3 py-1 rounded-full border border-acamp-blue/10">
-              <span className="text-[10px] font-black text-acamp-blue uppercase">{attendancesInViewMonth.length} Presenças</span>
-            </div>
-          </div>
+          {!isViewingCurrentMonth && (
+            <button onClick={resetToToday} className="text-[9px] font-black text-acamp-blue uppercase bg-acamp-light px-3 py-1.5 rounded-lg border border-acamp-blue/10 active:scale-95 transition-all">
+              Hoje
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-7 gap-2 text-center mb-4">
@@ -158,15 +138,13 @@ const AttendancePage: React.FC<AttendancePageProps> = ({ user, onCheckIn }) => {
         </div>
 
         <div className="grid grid-cols-7 gap-2 text-center">
-          {paddingDays.map(d => (
-            <div key={`p-${d}`} className="h-10"></div>
-          ))}
+          {paddingDays.map(d => <div key={`p-${d}`} className="h-10"></div>)}
           {calendarDays.map(d => {
             const dateObj = new Date(viewYear, viewMonth, d);
+            const dateStr = dateObj.toISOString().split('T')[0];
             const isDaySunday = dateObj.getDay() === 0;
             const isDayToday = d === today.getDate() && isViewingCurrentMonth;
-            const attendanceDate = attendancesInViewMonth.find(att => new Date(att).getDate() === d);
-            const hasAttendance = !!attendanceDate;
+            const hasAttendance = user.attendance_history.includes(dateStr);
             
             return (
               <div 
@@ -185,35 +163,6 @@ const AttendancePage: React.FC<AttendancePageProps> = ({ user, onCheckIn }) => {
               </div>
             );
           })}
-        </div>
-
-        {/* Estatísticas baseadas no mês visualizado */}
-        <div className="mt-10 grid grid-cols-2 gap-4">
-          <div className="bg-gray-50 p-4 rounded-3xl border border-gray-100 flex flex-col items-center">
-            <span className="text-[9px] text-gray-400 font-black uppercase mb-1 tracking-widest">Aproveitamento</span>
-            <span className="text-xl font-black text-acamp-blue">
-              {totalDays > 0 ? Math.round((attendancesInViewMonth.length / totalDays) * 100) : 0}%
-            </span>
-          </div>
-          <div className="bg-gray-50 p-4 rounded-3xl border border-gray-100 flex flex-col items-center">
-            <span className="text-[9px] text-gray-400 font-black uppercase mb-1 tracking-widest">Total Faltas</span>
-            <span className="text-xl font-black text-red-400">
-              {isViewingCurrentMonth 
-                ? Math.max(0, (today.getDate() - paddingDays.length) - attendancesInViewMonth.length)
-                : Math.max(0, totalDays - attendancesInViewMonth.length)}
-            </span>
-          </div>
-        </div>
-        
-        <div className="mt-6 flex items-center justify-center gap-6">
-           <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 bg-acamp-blue rounded-full"></div>
-              <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Presente</span>
-           </div>
-           <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 bg-gray-100 rounded-full border border-gray-200"></div>
-              <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Ausente</span>
-           </div>
         </div>
       </div>
     </div>

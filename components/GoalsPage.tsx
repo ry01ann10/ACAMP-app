@@ -1,7 +1,8 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ICONS } from '../constants';
 import { AthleteData, GlobalGoals } from '../types';
+import { ShoppingBag, Star, Zap, History, ChevronRight } from 'lucide-react';
 
 interface GoalsPageProps {
   user: AthleteData;
@@ -15,163 +16,206 @@ interface GoalsPageProps {
 }
 
 const GoalsPage: React.FC<GoalsPageProps> = ({ user, goals, progress, onRedeem }) => {
+  const [activeTab, setActiveTab] = useState<'goals' | 'shop'>('goals');
+
   const isGoalRedeemedToday = (goalId: string) => {
     const lastRedemption = user.last_redemptions?.[goalId];
     if (!lastRedemption) return false;
-    
     const lastDate = new Date(lastRedemption);
     const today = new Date();
-    
-    return (
-      lastDate.getDate() === today.getDate() &&
-      lastDate.getMonth() === today.getMonth() &&
-      lastDate.getFullYear() === today.getFullYear()
-    );
+    return lastDate.toDateString() === today.toDateString();
   };
 
   const isWeeklyGoalRedeemedThisWeek = (goalId: string) => {
     const lastRedemption = user.last_redemptions?.[goalId];
     if (!lastRedemption) return false;
-    
     const lastDate = new Date(lastRedemption);
     const today = new Date();
-    
-    // Check if it's the same Monday-Sunday week
-    // Get start of week (Monday) for last redemption
     const getMonday = (d: Date) => {
-      const day = d.getDay() || 7;
-      if(day !== 1) d.setHours(-24 * (day - 1));
-      d.setHours(0,0,0,0);
-      return d;
+      const date = new Date(d);
+      const day = date.getDay() || 7;
+      date.setDate(date.getDate() - (day - 1));
+      date.setHours(0,0,0,0);
+      return date;
     };
-    
-    const lastMonday = getMonday(new Date(lastDate));
-    const currentMonday = getMonday(new Date(today));
-    
-    return lastMonday.getTime() === currentMonday.getTime();
+    return getMonday(lastDate).getTime() === getMonday(today).getTime();
   };
 
   const dynamicGoals = [
     {
       id: 'score_goal',
-      title: 'Meta de Pontuação Diária',
-      description: 'Atingir a pontuação definida pelo técnico em uma sessão.',
+      title: 'Precisão de Elite',
+      description: 'Atingir o score alvo em uma sessão.',
       target: goals.daily_score_target,
       current: progress.today_best_score,
       reward: 50,
-      type: 'score',
-      resetType: 'Diário'
+      icon: <Star size={20} />,
+      reset: 'Diário',
+      type: 'daily'
     },
     {
       id: 'shots_goal',
-      title: 'Volume de Tiros Diários',
-      description: 'Completar a quantidade de flechas sugerida para hoje.',
+      title: 'Máquina de Tiros',
+      description: 'Completar o volume de flechas do dia.',
       target: goals.daily_shots_target,
       current: progress.today_shots,
       reward: 20,
-      type: 'shots',
-      resetType: 'Diário'
+      icon: <Zap size={20} />,
+      reset: 'Diário',
+      type: 'daily'
     },
     {
       id: 'attendance_goal',
-      title: 'Disciplina Semanal',
-      description: 'Manter a frequência mínima exigida na semana.',
+      title: 'Guerreiro Ávido',
+      description: 'Comparecer aos treinos semanais.',
       target: goals.weekly_attendance_target,
       current: progress.week_attendance,
       reward: 100,
-      type: 'attendance',
-      resetType: 'Segunda-feira'
+      icon: <History size={20} />,
+      reset: 'Semanal',
+      type: 'weekly'
     }
   ];
 
+  const storeItems = [
+    { id: 'music', title: 'DJ do Treino', desc: 'Escolha a playlist por 30 min.', price: 250, icon: '🎵' },
+    { id: 'feedback', title: 'Feedback Extra', desc: 'Análise em vídeo com o técnico.', price: 500, icon: '📹' },
+    { id: 'rest', title: 'Pausa VIP', desc: 'Pausa de 10 min extra com café.', price: 150, icon: '☕' },
+    { id: 'badge', title: 'Moldura Dourada', desc: 'Destaque no seu perfil por 1 mês.', price: 1000, icon: '🏆' },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Metas e Prêmios</h1>
-        <div className="flex items-center gap-2 bg-acamp-yellow/20 px-3 py-1 rounded-full border border-acamp-yellow/30">
-          <span className="text-xs font-bold text-acamp-blue">Saldo: {user.brotocoin_balance} BORTOCOINS</span>
-          <span className="text-acamp-yellow">{ICONS.Coins}</span>
+    <div className="space-y-6 pb-20">
+      {/* Header Central de Recompensas */}
+      <div className="bg-acamp-blue rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden">
+        <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
+        <div className="relative z-10">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-acamp-yellow mb-2">Seu Patrimônio</p>
+          <div className="flex items-end gap-3">
+             <h1 className="text-5xl font-black tracking-tighter">{user.brotocoin_balance}</h1>
+             <span className="text-acamp-yellow font-black uppercase text-sm mb-1.5 tracking-widest">Bortocoins</span>
+          </div>
+          <div className="mt-6 flex gap-2">
+             <div className="bg-white/10 px-4 py-2 rounded-2xl border border-white/10 backdrop-blur-md">
+                <span className="text-[10px] font-bold block opacity-60 uppercase">Nível Equipe</span>
+                <span className="text-xs font-black">Arqueiro Iniciado</span>
+             </div>
+          </div>
         </div>
       </div>
 
-      <div className="space-y-4">
-        {dynamicGoals.map(goal => {
-          const isCompleted = goal.current >= goal.target;
-          const isRedeemed = goal.type === 'attendance' 
-            ? isWeeklyGoalRedeemedThisWeek(goal.id) 
-            : isGoalRedeemedToday(goal.id);
-          
-          const progressPercent = Math.min((goal.current / goal.target) * 100, 100);
-          
-          return (
-            <div key={goal.id} className={`bg-white rounded-3xl p-6 shadow-sm border transition-all ${isCompleted ? 'border-green-200 bg-green-50/20' : 'border-gray-100'} ${isRedeemed ? 'opacity-70' : ''}`}>
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className={`p-3 rounded-2xl ${isCompleted ? 'bg-green-100 text-green-600' : 'bg-acamp-light text-acamp-blue'}`}>
-                    {goal.type === 'attendance' ? ICONS.Calendar : goal.type === 'score' ? ICONS.Target : ICONS.Trend}
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-gray-900">{goal.title}</h3>
-                    <p className="text-[10px] font-bold text-acamp-blue uppercase tracking-wider mb-1">Reseta: {goal.resetType}</p>
-                    <p className="text-xs text-gray-500">{goal.description}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 bg-acamp-yellow/10 px-2 py-1 rounded-lg">
-                  <span className="text-xs font-bold text-acamp-blue">+{goal.reward}</span>
-                  <span className="text-acamp-yellow scale-75">{ICONS.Coins}</span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider">
-                  <span className="text-gray-400">Progresso</span>
-                  <span className={isCompleted ? 'text-green-600' : 'text-acamp-blue'}>
-                    {goal.current} / {goal.target}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
-                  <div 
-                    className={`h-full transition-all duration-700 ${isCompleted ? 'bg-green-500' : 'bg-acamp-blue'}`} 
-                    style={{ width: `${progressPercent}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              {isCompleted && !isRedeemed && (
-                <button 
-                  onClick={() => onRedeem(goal.id, goal.reward)}
-                  className="mt-4 w-full bg-acamp-yellow text-acamp-blue py-3 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-lg active:scale-95 transition-all border border-yellow-400"
-                >
-                  Resgatar {goal.reward} BORTOCOINS
-                </button>
-              )}
-
-              {isRedeemed && (
-                <div className="mt-4 flex items-center justify-center gap-2 text-[10px] font-bold text-gray-400 uppercase bg-gray-50 py-3 rounded-2xl border border-gray-100">
-                  {ICONS.Check} Já Resgatado
-                </div>
-              )}
-            </div>
-          );
-        })}
+      {/* Tabs */}
+      <div className="flex p-1.5 bg-white rounded-3xl border border-gray-100 shadow-sm">
+        <button 
+          onClick={() => setActiveTab('goals')}
+          className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === 'goals' ? 'bg-acamp-blue text-white shadow-lg' : 'text-gray-400'}`}
+        >
+          {ICONS.Trophy} Missões
+        </button>
+        <button 
+          onClick={() => setActiveTab('shop')}
+          className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === 'shop' ? 'bg-acamp-blue text-white shadow-lg' : 'text-gray-400'}`}
+        >
+          <ShoppingBag size={14} /> Loja ACAMP
+        </button>
       </div>
 
-      {/* Histórico Simulado */}
-      <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
-        <h3 className="font-bold text-gray-800 mb-4">Como ganhar BORTOCOINS?</h3>
-        <div className="space-y-3">
-          <div className="flex items-start gap-3">
-            <div className="text-acamp-yellow mt-0.5">{ICONS.Check}</div>
-            <p className="text-xs text-gray-500">Marque presença no treino: <span className="font-bold text-acamp-blue">+5 BORTOCOINS</span> (Auto)</p>
+      {activeTab === 'goals' ? (
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {dynamicGoals.map(goal => {
+            const isCompleted = goal.current >= goal.target;
+            const isRedeemed = goal.type === 'weekly' ? isWeeklyGoalRedeemedThisWeek(goal.id) : isGoalRedeemedToday(goal.id);
+            const percent = Math.min((goal.current / goal.target) * 100, 100);
+
+            return (
+              <div key={goal.id} className={`bg-white rounded-[2.5rem] p-8 border-2 transition-all ${isCompleted && !isRedeemed ? 'border-acamp-yellow bg-yellow-50/10 shadow-lg scale-[1.02]' : 'border-gray-100'}`}>
+                <div className="flex justify-between items-start mb-6">
+                  <div className="flex gap-4">
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border-2 ${isCompleted ? 'bg-acamp-yellow text-acamp-blue border-acamp-yellow' : 'bg-gray-50 text-gray-400 border-gray-100'}`}>
+                      {goal.icon}
+                    </div>
+                    <div>
+                      <h3 className="font-black text-gray-800 uppercase text-xs tracking-wider">{goal.title}</h3>
+                      <p className="text-[10px] text-gray-400 font-medium leading-tight max-w-[180px]">{goal.description}</p>
+                    </div>
+                  </div>
+                  <div className="bg-acamp-light px-3 py-1.5 rounded-xl border border-acamp-blue/5">
+                    <span className="text-[10px] font-black text-acamp-blue">+{goal.reward} BTC</span>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                    <span className="text-gray-400">Progresso</span>
+                    <span className={isCompleted ? 'text-green-600' : 'text-acamp-blue'}>{goal.current} / {goal.target}</span>
+                  </div>
+                  <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden border border-gray-50">
+                    <div 
+                      className={`h-full transition-all duration-1000 ease-out rounded-full ${isCompleted ? 'bg-green-500' : 'bg-acamp-blue'}`} 
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
+                </div>
+
+                {isCompleted && !isRedeemed && (
+                  <button 
+                    onClick={() => onRedeem(goal.id, goal.reward)}
+                    className="mt-6 w-full bg-acamp-yellow text-acamp-blue py-5 rounded-2xl font-black text-xs uppercase tracking-[0.3em] shadow-xl active:scale-95 transition-all border-b-4 border-yellow-600"
+                  >
+                    Resgatar Prêmio 🏹
+                  </button>
+                )}
+
+                {isRedeemed && (
+                  <div className="mt-6 flex items-center justify-center gap-2 text-[10px] font-black text-gray-300 uppercase tracking-widest bg-gray-50 py-4 rounded-2xl border border-gray-100">
+                    {ICONS.Check} Coletado ({goal.reset})
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {storeItems.map(item => (
+            <button 
+              key={item.id}
+              className="bg-white p-6 rounded-[2rem] border-2 border-gray-100 text-left hover:border-acamp-blue hover:shadow-lg transition-all active:scale-95 group"
+            >
+              <div className="text-3xl mb-4 group-hover:scale-110 transition-transform">{item.icon}</div>
+              <h4 className="font-black text-gray-800 text-[11px] uppercase tracking-widest mb-1">{item.title}</h4>
+              <p className="text-[9px] text-gray-400 font-medium mb-4 leading-tight">{item.desc}</p>
+              <div className="flex items-center gap-1.5 bg-acamp-light px-3 py-1.5 rounded-xl w-fit">
+                <span className="text-[10px] font-black text-acamp-blue">{item.price} BTC</span>
+              </div>
+            </button>
+          ))}
+          <div className="col-span-2 bg-acamp-light/50 p-6 rounded-[2.5rem] text-center border border-dashed border-acamp-blue/10">
+             <p className="text-[10px] font-bold text-acamp-blue uppercase tracking-widest">Em breve: Mais itens na loja</p>
           </div>
-          <div className="flex items-start gap-3">
-            <div className="text-acamp-yellow mt-0.5">{ICONS.Check}</div>
-            <p className="text-xs text-gray-500">Conclua uma série de tiros: <span className="font-bold text-acamp-blue">+15 BORTOCOINS</span> (Auto)</p>
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="text-acamp-yellow mt-0.5">{ICONS.Check}</div>
-            <p className="text-xs text-gray-500">Bata metas definidas e resgate aqui: <span className="font-bold text-acamp-blue">Variável</span></p>
-          </div>
+        </div>
+      )}
+
+      {/* Regras de Ganho Rápido */}
+      <div className="bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm">
+        <h3 className="font-black text-gray-800 uppercase text-xs tracking-[0.2em] mb-6 flex items-center gap-2">
+           <Zap size={14} className="text-acamp-yellow" /> Ganhe moedas agora
+        </h3>
+        <div className="grid gap-4">
+           <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
+              <div className="flex items-center gap-3">
+                 <div className="bg-white p-2 rounded-xl text-acamp-blue shadow-sm">{ICONS.Calendar}</div>
+                 <span className="text-[10px] font-black text-gray-600 uppercase tracking-widest">Presença Diária</span>
+              </div>
+              <span className="text-xs font-black text-acamp-blue">+5 BTC</span>
+           </div>
+           <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
+              <div className="flex items-center gap-3">
+                 <div className="bg-white p-2 rounded-xl text-acamp-blue shadow-sm">{ICONS.Target}</div>
+                 <span className="text-[10px] font-black text-gray-600 uppercase tracking-widest">Sessão Técnica</span>
+              </div>
+              <span className="text-xs font-black text-acamp-blue">+15 BTC</span>
+           </div>
         </div>
       </div>
     </div>

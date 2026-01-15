@@ -15,8 +15,10 @@ export interface Profile {
   email: string;
   category: Category;
   role: Role;
-  brotocoin_balance: number;
+  brotocoin_balance: number; // Nome real da coluna no Supabase
   avatar_url?: string;
+  today_shots?: number;
+  last_redemptions?: Record<string, string>;
 }
 
 export interface ShotHistoryItem {
@@ -28,14 +30,13 @@ export interface ShotHistoryItem {
 }
 
 export interface AthleteData extends Profile {
-  attendance_history: string[]; // ISO strings of dates attended
+  attendance_history: string[]; 
   weekly_attendance: number;
   monthly_attendance: number;
   avg_score: number;
   today_shots: number;
   today_best_score: number;
   history: ShotHistoryItem[];
-  last_redemptions?: Record<string, string>; // goalId -> ISO date string
   individual_goals?: {
     daily_score?: number;
     daily_shots?: number;
@@ -51,23 +52,12 @@ export interface GlobalGoals {
 
 export interface TrainingPlan {
   id: string;
-  athlete_id: string; // "all" or specific ID
+  athlete_id: string;
   title: string;
   description: string;
   duration: string;
   intensity: 'Baixa' | 'Média' | 'Alta';
   completed: boolean;
-  last_completed_at?: string; // Para reset diário
+  last_completed_at?: string;
   created_at: string;
-}
-
-export interface ShotSession {
-  id: string;
-  athlete_id: string;
-  date: string;
-  distance: number;
-  bow_type: Category;
-  total_score: number;
-  arrows_per_end: number;
-  num_ends: number;
 }
