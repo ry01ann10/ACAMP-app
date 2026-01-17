@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Profile, Role, Category, GlobalGoals, AthleteData, TrainingPlan, ShotHistoryItem } from './types';
 import { supabase } from './lib/supabase';
@@ -29,6 +29,25 @@ const App: React.FC = () => {
     weekly_attendance_target: 3
   });
 
+  const fetchProfile = useCallback(async (userId: string) => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (profile) {
+        const athleteData = await enrichAthleteData(profile);
+        setUser(athleteData);
+        if (profile.role === Role.TECNICO) fetchFullEquipeData();
+        fetchTrainingPlans(userId, profile.role);
+      }
+    } catch (err) {
+      console.error("Erro ao sincronizar dados:", err);
+    }
+  }, []);
+
   useEffect(() => {
     const initSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -51,26 +70,7 @@ const App: React.FC = () => {
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, []);
-
-  const fetchProfile = async (userId: string) => {
-    try {
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (profile) {
-        const athleteData = await enrichAthleteData(profile);
-        setUser(athleteData);
-        if (profile.role === Role.TECNICO) fetchFullEquipeData();
-        fetchTrainingPlans(userId);
-      }
-    } catch (err) {
-      console.error("Erro ao sincronizar dados:", err);
-    }
-  };
+  }, [fetchProfile]);
 
   const enrichAthleteData = async (profile: any): Promise<AthleteData> => {
     const { data: attendance } = await supabase.from('attendance').select('date').eq('athlete_id', profile.id);
@@ -83,12 +83,18 @@ const App: React.FC = () => {
     const todaySessions = (history || []).filter(h => h.date.startsWith(todayStr));
     const todayBestScore = todaySessions.length > 0 ? Math.max(...todaySessions.map(s => s.score)) : 0;
 
-    const lastRedemptions = typeof profile.last_redemptions === 'string' 
-      ? JSON.parse(profile.last_redemptions) 
-      : (profile.last_redemptions || {});
+    let lastRedemptions = {};
+    try {
+      lastRedemptions = typeof profile.last_redemptions === 'string' 
+        ? JSON.parse(profile.last_redemptions) 
+        : (profile.last_redemptions || {});
+    } catch (e) {
+      lastRedemptions = {};
+    }
 
     return {
       ...profile,
+      role: profile.role || Role.ATLETA,
       attendance_history: attDates,
       weekly_attendance: attDates.filter(d => isThisWeek(new Date(d))).length,
       monthly_attendance: attDates.filter(d => new Date(d).getMonth() === now.getMonth()).length,
@@ -107,12 +113,18 @@ const App: React.FC = () => {
     }
   };
 
-  const fetchTrainingPlans = async (userId: string) => {
+  const fetchTrainingPlans = async (userId: string, role: Role) => {
     const { data } = await supabase
       .from('training_plans')
-      .select('*')
-      .or(`athlete_id.eq.all,athlete_id.eq.${userId}`);
-    if (data) setTrainingPlans(data);
+      .select('*');
+    
+    if (data) {
+      if (role === Role.TECNICO) {
+        setTrainingPlans(data);
+      } else {
+        setTrainingPlans(data.filter(p => p.athlete_id === 'all' || p.athlete_id === userId));
+      }
+    }
   };
 
   const isThisWeek = (date: Date) => {
@@ -128,8 +140,8 @@ const App: React.FC = () => {
     if (!user) return;
     const currentShots = (user as AthleteData).today_shots || 0;
     const newShots = Math.max(0, currentShots + amount);
-    const backupUser = { ...user };
-
+    
+    // Atualização otimista
     setUser(prev => prev ? { ...prev, today_shots: newShots } as AthleteData : null);
 
     const { error } = await supabase
@@ -138,8 +150,8 @@ const App: React.FC = () => {
       .eq('id', user.id);
 
     if (error) {
-      setUser(backupUser);
-      alert("Erro ao sincronizar disparos.");
+      alert("Erro ao sincronizar: " + error.message);
+      fetchProfile(user.id);
     } else if (user.role === Role.TECNICO) {
       fetchFullEquipeData();
     }
@@ -157,19 +169,14 @@ const App: React.FC = () => {
     }
     
     if (user) await fetchProfile(user.id);
-    if (user?.role === Role.TECNICO) fetchFullEquipeData();
   };
 
   const handleRedeemGoal = async (goalId: string, amount: number) => {
     if (!user) return;
     const now = new Date().toISOString();
-    const currentRedemptions = (user as AthleteData).last_redemptions || {};
+    const athleteData = user as AthleteData;
+    const currentRedemptions = { ...(athleteData.last_redemptions || {}) };
     
-    if (currentRedemptions[goalId] && new Date(currentRedemptions[goalId]).toDateString() === new Date().toDateString() && goalId !== 'attendance_goal') {
-      alert("Você já resgatou este prêmio hoje!");
-      return;
-    }
-
     const updatedRedemptions = { ...currentRedemptions, [goalId]: now };
     const newBalance = (user.brotocoin_balance || 0) + amount;
 
@@ -184,6 +191,9 @@ const App: React.FC = () => {
     if (!error) {
       setUser(prev => prev ? { ...prev, brotocoin_balance: newBalance, last_redemptions: updatedRedemptions } as AthleteData : null);
       alert(`🎉 Parabéns! Você ganhou ${amount} BORTOCOINS!`);
+    } else {
+      console.error("Erro ao resgatar:", error);
+      alert("Erro ao processar resgate: " + error.message);
     }
   };
 
@@ -191,11 +201,7 @@ const App: React.FC = () => {
     if (!user) return;
     const { error } = await supabase.from('profiles').update(updates).eq('id', user.id);
     if (!error) {
-      const updatedUser = { ...user, ...updates } as AthleteData;
-      setUser(updatedUser);
-      if (updates.role === Role.TECNICO) {
-        await fetchFullEquipeData();
-      }
+      await fetchProfile(user.id);
     } else {
       throw error;
     }
@@ -217,9 +223,25 @@ const App: React.FC = () => {
     }
   };
 
+  const handleAddTraining = async (plan: any) => {
+    if (!user) return;
+    const { error } = await supabase.from('training_plans').insert(plan);
+    if (!error) {
+      await fetchTrainingPlans(user.id, user.role);
+    }
+  };
+
+  const handleRemoveTraining = async (id: string) => {
+    if (!user) return;
+    const { error } = await supabase.from('training_plans').delete().eq('id', id);
+    if (!error) {
+      await fetchTrainingPlans(user.id, user.role);
+    }
+  };
+
   const completeShotSession = async (totalShots: number, bestScore: number, endScores: any) => {
     if (!user) return;
-    const { error } = await supabase.from('shot_sessions').insert({
+    const { error: sessionError } = await supabase.from('shot_sessions').insert({
       athlete_id: user.id,
       date: new Date().toISOString(),
       score: bestScore,
@@ -227,12 +249,12 @@ const App: React.FC = () => {
       end_scores: endScores
     });
     
-    if (!error) {
+    if (!sessionError) {
       const currentShots = (user as AthleteData).today_shots || 0;
       const newTotalShots = currentShots + totalShots;
       await supabase.from('profiles').update({ today_shots: newTotalShots }).eq('id', user.id);
-      setUser(prev => prev ? { ...prev, today_shots: newTotalShots } as AthleteData : null);
       await awardCoins(user.id, 15);
+      await fetchProfile(user.id);
     }
   };
 
@@ -259,8 +281,21 @@ const App: React.FC = () => {
             const handleAuth = async () => {
               setLoading(true);
               if (authMode === 'signup') {
-                const { error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
-                if (error) alert(error.message); else { alert("Cadastro realizado!"); setAuthMode('login'); }
+                const { data: authData, error: authError } = await supabase.auth.signUp({ 
+                  email, 
+                  password, 
+                  options: { data: { full_name: name, role: Role.ATLETA } } 
+                });
+                
+                if (authError) {
+                  alert(authError.message);
+                } else {
+                  if (authData.user) {
+                    await supabase.from('profiles').update({ role: Role.ATLETA, name: name }).eq('id', authData.user.id);
+                  }
+                  alert("Cadastro realizado! Por favor, faça login."); 
+                  setAuthMode('login'); 
+                }
               } else {
                 const { error } = await supabase.auth.signInWithPassword({ email, password });
                 if (error) alert(error.message);
@@ -302,10 +337,10 @@ const App: React.FC = () => {
         <Header user={user} onLogout={() => supabase.auth.signOut()} />
         <main className="max-w-4xl mx-auto px-4 pt-4">
           <Routes>
-            <Route path="/" element={isCoach ? <CoachDashboard athletes={athletes} onUpdateGoals={g => setGlobalGoals({...globalGoals, ...g})} onUpdateIndividualGoals={(id, g) => supabase.from('profiles').update({ individual_goals: g }).eq('id', id).then(() => fetchFullEquipeData())} onAwardCoins={awardCoins} onAddTraining={p => supabase.from('training_plans').insert(p).then(() => fetchTrainingPlans(user.id))} currentGoals={globalGoals} /> : <AthleteDashboard user={currentAthleteData} goals={effectiveGoals} progress={{ today_shots: currentAthleteData.today_shots, today_best_score: currentAthleteData.today_best_score, week_attendance: currentAthleteData.weekly_attendance }} onAdjustShots={handleAdjustShots} />} />
+            <Route path="/" element={isCoach ? <CoachDashboard athletes={athletes} onUpdateGoals={g => setGlobalGoals({...globalGoals, ...g})} onUpdateIndividualGoals={(id, g) => supabase.from('profiles').update({ individual_goals: g }).eq('id', id).then(() => fetchFullEquipeData())} onAwardCoins={awardCoins} onAddTraining={handleAddTraining} currentGoals={globalGoals} /> : <AthleteDashboard user={currentAthleteData} goals={effectiveGoals} progress={{ today_shots: currentAthleteData.today_shots, today_best_score: currentAthleteData.today_best_score, week_attendance: currentAthleteData.weekly_attendance }} onAdjustShots={handleAdjustShots} />} />
             <Route path="/attendance" element={<AttendancePage user={currentAthleteData} onCheckIn={handleRegisterAttendance} />} />
             <Route path="/shots" element={<ShotLogger user={currentAthleteData} onComplete={completeShotSession} />} />
-            <Route path="/training" element={<TrainingPlansPage user={user} plans={trainingPlans} onRemove={id => supabase.from('training_plans').delete().eq('id', id).then(() => fetchTrainingPlans(user.id))} />} />
+            <Route path="/training" element={<TrainingPlansPage user={user} athletes={athletes} plans={trainingPlans} onRemove={handleRemoveTraining} onAdd={handleAddTraining} />} />
             <Route path="/goals" element={<GoalsPage user={currentAthleteData} goals={effectiveGoals} progress={{ today_shots: currentAthleteData.today_shots, today_best_score: currentAthleteData.today_best_score, week_attendance: currentAthleteData.weekly_attendance }} onRedeem={handleRedeemGoal} />} />
             <Route path="/profile" element={<ProfilePage user={user} onRoleSwitch={r => handleUpdateProfile({ role: r })} onUpdateProfile={handleUpdateProfile} onLogout={() => supabase.auth.signOut()} />} />
             <Route path="*" element={<Navigate to="/" />} />
