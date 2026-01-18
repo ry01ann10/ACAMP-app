@@ -5,10 +5,9 @@ import { ICONS } from '../constants';
 
 interface NavbarProps {
   isCoach: boolean;
-  shotsGoalMet?: boolean;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ isCoach, shotsGoalMet }) => {
+const Navbar: React.FC<NavbarProps> = ({ isCoach }) => {
   const activeStyle = "flex flex-col items-center gap-1 text-acamp-yellow";
   const inactiveStyle = "flex flex-col items-center gap-1 text-blue-200 opacity-70 hover:opacity-100 transition-opacity";
 
@@ -41,17 +40,10 @@ const Navbar: React.FC<NavbarProps> = ({ isCoach, shotsGoalMet }) => {
         <span className="text-[10px] uppercase font-bold tracking-wider">Treinos</span>
       </NavLink>
 
-      {isCoach ? (
-        <NavLink to="/goals" className={({ isActive }) => isActive ? activeStyle : inactiveStyle}>
-          {ICONS.Award}
-          <span className="text-[10px] uppercase font-bold tracking-wider">Metas</span>
-        </NavLink>
-      ) : (
-        <NavLink to="/goals" className={({ isActive }) => isActive ? activeStyle : inactiveStyle}>
-          {ICONS.Trophy}
-          <span className="text-[10px] uppercase font-bold tracking-wider">Conquistas</span>
-        </NavLink>
-      )}
+      <NavLink to="/goals" className={({ isActive }) => isActive ? activeStyle : inactiveStyle}>
+        {ICONS.Trophy}
+        <span className="text-[10px] uppercase font-bold tracking-wider">Metas</span>
+      </NavLink>
     </nav>
   );
 };

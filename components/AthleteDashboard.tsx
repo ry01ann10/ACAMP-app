@@ -1,9 +1,9 @@
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AthleteData, GlobalGoals } from '../types';
 import { ICONS } from '../constants';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Plus, Minus, Zap } from 'lucide-react';
+import { Plus, Minus, Zap, Target as TargetIcon, Award, TrendingUp, Clock, ChevronRight, Loader2, Star } from 'lucide-react';
 
 interface AthleteDashboardProps {
   user: AthleteData;
@@ -17,8 +17,11 @@ interface AthleteDashboardProps {
 }
 
 const AthleteDashboard: React.FC<AthleteDashboardProps> = ({ user, goals, progress, onAdjustShots }) => {
+  const [isPending, setIsPending] = useState(false);
+  
   const scorePercent = Math.min((progress.today_best_score / goals.daily_score_target) * 100, 100);
   const shotsPercent = Math.min((progress.today_shots / goals.daily_shots_target) * 100, 100);
+  
   const isShotsGoalMet = shotsPercent >= 100;
   const isScoreGoalMet = scorePercent >= 100;
 
@@ -26,20 +29,30 @@ const AthleteDashboard: React.FC<AthleteDashboardProps> = ({ user, goals, progre
   const prevScoreMet = useRef(isScoreGoalMet);
 
   useEffect(() => {
-    const newlyReached = (isShotsGoalMet && !prevShotsMet.current) || (isScoreGoalMet && !prevScoreMet.current);
-    
-    if (newlyReached) {
+    // Verifica se alguma meta foi atingida NESTE momento
+    const newlyMetShots = isShotsGoalMet && !prevShotsMet.current;
+    const newlyMetScore = isScoreGoalMet && !prevScoreMet.current;
+
+    if (newlyMetShots || newlyMetScore) {
       const root = document.getElementById('root');
       if (root) {
         root.classList.remove('goal-reached-anim');
-        void root.offsetWidth;
+        void root.offsetWidth; // Trigger reflow
         root.classList.add('goal-reached-anim');
       }
     }
-
+    
     prevShotsMet.current = isShotsGoalMet;
     prevScoreMet.current = isScoreGoalMet;
   }, [isShotsGoalMet, isScoreGoalMet]);
+
+  const handleAdjust = async (amount: number) => {
+    if (onAdjustShots && !isPending) {
+      setIsPending(true);
+      await onAdjustShots(amount);
+      setTimeout(() => setIsPending(false), 300);
+    }
+  };
 
   const getStartOfWeek = () => {
     const now = new Date();
@@ -52,13 +65,14 @@ const AthleteDashboard: React.FC<AthleteDashboardProps> = ({ user, goals, progre
 
   const startOfWeekDate = getStartOfWeek();
   const weeklyHistory = user.history.filter(h => new Date(h.date).getTime() >= startOfWeekDate.getTime());
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todaySessions = user.history.filter(h => h.date.startsWith(todayStr));
 
   const chartData = [...weeklyHistory]
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     .map(h => ({
       name: new Date(h.date).toLocaleDateString('pt-BR', { weekday: 'short' }),
       score: h.score,
-      fullDate: h.date
     }));
 
   const weeklyAvg = weeklyHistory.length > 0 
@@ -66,180 +80,147 @@ const AthleteDashboard: React.FC<AthleteDashboardProps> = ({ user, goals, progre
     : 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 pb-24 animate-in fade-in duration-700">
+      <div className="flex items-center justify-between px-1">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Olá, {user.name.split(' ')[0]}!</h1>
-          <p className="text-gray-500 text-sm">Pronto para o treino de hoje?</p>
+          <h1 className="text-2xl font-black text-gray-900 tracking-tight uppercase">Performance</h1>
+          <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest">Atleta: {user.name} • {user.category}</p>
         </div>
-        <div className="bg-acamp-light px-4 py-2 rounded-2xl border border-acamp-blue/10 text-right">
-          <span className="text-[10px] font-black text-acamp-blue uppercase block mb-0.5 tracking-widest opacity-60">Categoria</span>
-          <span className="font-black text-acamp-blue text-sm uppercase">{user.category}</span>
-        </div>
-      </div>
-
-      {/* Card de Meta de Pontuação */}
-      <div className={`bg-gradient-to-br from-acamp-blue to-acamp-dark rounded-[2.5rem] p-8 text-white shadow-xl relative overflow-hidden transition-all duration-500 ${isScoreGoalMet ? 'ring-4 ring-acamp-yellow ring-opacity-50' : ''}`}>
-        <div className="absolute top-0 right-0 p-6 opacity-10">
-          {ICONS.Target}
-        </div>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-acamp-yellow font-black text-[10px] uppercase tracking-[0.2em]">Meta de Pontuação</h3>
-          {isScoreGoalMet && (
-            <div className="bg-acamp-yellow text-acamp-blue text-[9px] font-black px-3 py-1 rounded-full uppercase animate-bounce shadow-lg">
-              Meta Batida!
-            </div>
-          )}
-        </div>
-        <div className="flex items-end justify-between mb-4">
-          <span className="text-5xl font-black tracking-tighter">{progress.today_best_score} <span className="text-lg opacity-40 font-bold">/ {goals.daily_score_target}</span></span>
-          <span className="text-acamp-yellow text-xs font-black bg-white/10 px-2 py-1 rounded-lg">{scorePercent.toFixed(0)}%</span>
-        </div>
-        <div className="w-full bg-white/10 rounded-full h-3 mb-6 border border-white/5">
-          <div className="bg-acamp-yellow h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(255,215,0,0.5)]" style={{ width: `${scorePercent}%` }}></div>
-        </div>
-        <div className="flex items-center gap-2 text-[10px] font-bold text-blue-100 uppercase tracking-widest">
-          {isScoreGoalMet ? (
-            <div className="flex items-center gap-2"><div className="bg-green-400 w-2 h-2 rounded-full animate-pulse"></div> Excelente desempenho!</div>
-          ) : (
-            `Faltam ${goals.daily_score_target - progress.today_best_score} pts para o objetivo`
-          )}
+        <div className={`bg-acamp-blue text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg border-b-4 border-acamp-dark active:scale-95 transition-all ${isScoreGoalMet && isShotsGoalMet ? 'ring-4 ring-acamp-yellow ring-offset-2' : ''}`}>
+          <Award size={24} className={isScoreGoalMet || isShotsGoalMet ? "text-acamp-yellow animate-bounce" : "text-blue-300"} />
         </div>
       </div>
 
-      {/* Card de Volume de Tiros (Atualizado) */}
-      <div className={`bg-white rounded-[2.5rem] p-8 shadow-sm border-2 transition-all duration-500 ${isShotsGoalMet ? 'border-acamp-yellow bg-yellow-50/20 shadow-lg' : 'border-gray-100'}`}>
+      {/* CARD VOLUME */}
+      <div className={`bg-white rounded-[3rem] p-8 shadow-sm border-2 transition-all duration-500 ${isShotsGoalMet ? 'border-green-400 bg-green-50/10 card-conquest' : 'border-gray-100'}`}>
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${isShotsGoalMet ? 'bg-acamp-yellow text-acamp-blue' : 'bg-acamp-light text-acamp-blue'}`}>
-              <Zap size={24} fill={isShotsGoalMet ? "currentColor" : "none"} />
+            <div className={`p-4 rounded-[1.5rem] transition-all duration-500 ${isShotsGoalMet ? 'bg-green-500 text-white shadow-lg rotate-12' : 'bg-acamp-light text-acamp-blue'}`}>
+              {isPending ? <Loader2 className="animate-spin" size={28} /> : <Zap size={28} fill={isShotsGoalMet ? "currentColor" : "none"} />}
             </div>
             <div>
-              <h3 className="font-black text-gray-800 uppercase text-xs tracking-wider">Volume do Dia</h3>
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Flechas disparadas</p>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">Volume de Hoje</p>
+              <h3 className="text-3xl font-black text-gray-900 tracking-tighter">
+                {progress.today_shots} <span className="text-sm text-gray-300 font-bold">/ {goals.daily_shots_target}</span>
+              </h3>
             </div>
           </div>
-          <div className="text-right">
-            <span className={`text-3xl font-black tracking-tighter ${isShotsGoalMet ? 'text-acamp-blue' : 'text-gray-900'}`}>
-              {progress.today_shots}
-            </span>
-            <span className="text-xs text-gray-400 font-bold"> / {goals.daily_shots_target}</span>
-          </div>
+          {isShotsGoalMet && (
+            <div className="bg-green-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest animate-pulse flex items-center gap-1">
+              <Star size={10} fill="currentColor" /> Meta Batida
+            </div>
+          )}
         </div>
 
-        <div className="w-full bg-gray-100 h-4 rounded-full mb-8 overflow-hidden p-1 border border-gray-50">
+        <div className="relative h-4 w-full bg-gray-100 rounded-full mb-8 overflow-hidden border border-gray-50">
           <div 
-            className={`h-full transition-all duration-1000 ease-out rounded-full ${isShotsGoalMet ? 'bg-acamp-yellow shadow-[0_0_10px_rgba(255,215,0,0.5)]' : 'bg-acamp-blue'}`} 
+            className={`h-full transition-all duration-1000 ease-out rounded-full ${isShotsGoalMet ? 'bg-green-500 shadow-[0_0_15px_rgba(34,197,94,0.4)]' : 'bg-acamp-blue'}`} 
             style={{ width: `${shotsPercent}%` }}
-          ></div>
+          />
         </div>
 
         {onAdjustShots && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              {/* Controles de Subtração */}
-              <div className="flex-1 flex gap-2">
-                <button 
-                  onClick={() => onAdjustShots(-6)}
-                  className="flex-1 h-14 rounded-2xl bg-gray-50 border border-gray-100 text-gray-400 font-black text-[10px] hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all active:scale-95 flex flex-col items-center justify-center"
-                >
-                  -6
-                </button>
-                <button 
-                  onClick={() => onAdjustShots(-1)}
-                  className="flex-1 h-14 rounded-2xl bg-gray-50 border border-gray-100 text-gray-400 font-black text-[10px] hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all active:scale-95 flex flex-col items-center justify-center"
-                >
-                  <Minus size={16} />
-                </button>
-              </div>
-
-              {/* Controles de Adição */}
-              <div className="flex-[1.5] flex gap-2">
-                <button 
-                  onClick={() => onAdjustShots(1)}
-                  className="flex-1 h-14 rounded-2xl bg-acamp-light border border-acamp-blue/10 text-acamp-blue font-black text-[10px] hover:bg-acamp-blue hover:text-white transition-all active:scale-95 flex flex-col items-center justify-center"
-                >
-                  <Plus size={16} />
-                </button>
-                <button 
-                  onClick={() => onAdjustShots(6)}
-                  className="flex-1 h-14 rounded-2xl bg-acamp-blue text-white font-black text-[10px] shadow-lg shadow-acamp-blue/20 hover:bg-acamp-dark transition-all active:scale-95 flex flex-col items-center justify-center border-b-4 border-acamp-dark"
-                >
-                  +6
-                  <span className="text-[8px] opacity-60 uppercase tracking-tighter">Série</span>
-                </button>
-              </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex gap-2">
+              <button disabled={isPending} onClick={() => handleAdjust(-6)} className="flex-1 h-16 bg-gray-50 text-gray-400 border border-gray-100 rounded-2xl flex flex-col items-center justify-center hover:bg-red-50 hover:text-red-500 transition-all active:scale-95 disabled:opacity-50">
+                <span className="text-xs font-black">-6</span>
+              </button>
+              <button disabled={isPending} onClick={() => handleAdjust(-1)} className="w-16 h-16 bg-gray-50 text-gray-400 border border-gray-100 rounded-2xl flex items-center justify-center hover:bg-red-50 active:scale-95 disabled:opacity-50">
+                <Minus size={20} />
+              </button>
             </div>
-            
-            <div className="flex items-center justify-center">
-              <p className={`text-[10px] font-black uppercase tracking-widest text-center ${isShotsGoalMet ? 'text-green-600' : 'text-gray-400'}`}>
-                {isShotsGoalMet ? '🔥 Excelente! Você atingiu o volume planejado.' : `Ainda faltam ${goals.daily_shots_target - progress.today_shots} flechas`}
-              </p>
+            <div className="flex gap-2">
+              <button disabled={isPending} onClick={() => handleAdjust(1)} className="w-16 h-16 bg-acamp-light text-acamp-blue border border-acamp-blue/10 rounded-2xl flex items-center justify-center hover:bg-acamp-blue hover:text-white transition-all active:scale-95 disabled:opacity-50">
+                <Plus size={20} />
+              </button>
+              <button disabled={isPending} onClick={() => handleAdjust(6)} className="flex-1 h-16 bg-acamp-blue text-white rounded-2xl flex flex-col items-center justify-center shadow-lg active:scale-95 border-b-4 border-acamp-dark disabled:opacity-50">
+                <span className="font-black text-xs">+6</span>
+              </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Estatísticas Rápidas */}
+      {/* GRID DE MÉTRICAS */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col gap-4">
-          <div className="bg-green-50 text-green-600 p-2.5 rounded-2xl w-fit">
-            <ICONS.Trend.type size={20} />
+        {/* SCORE DO DIA */}
+        <div className={`p-6 rounded-[2.5rem] shadow-xl relative overflow-hidden group border-2 transition-all duration-500 ${isScoreGoalMet ? 'bg-gradient-to-br from-green-500 to-green-700 text-white border-green-400 card-conquest' : 'bg-gradient-to-br from-acamp-blue to-acamp-dark text-white border-transparent'}`}>
+          <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform">
+            <TargetIcon size={80} />
           </div>
-          <div>
-            <span className="text-gray-400 text-[10px] font-black uppercase tracking-[0.2em] block mb-1">Média Semanal</span>
-            <p className="text-2xl font-black text-gray-900 tracking-tighter">{weeklyAvg} <span className="text-xs opacity-30">pts</span></p>
+          <p className={`text-[9px] font-black uppercase tracking-widest mb-2 ${isScoreGoalMet ? 'text-white' : 'text-acamp-yellow'}`}>
+            {isScoreGoalMet ? '🎯 Score Batido!' : 'Melhor Score'}
+          </p>
+          <div className="flex items-baseline gap-1">
+            <span className="text-3xl font-black tracking-tighter">{progress.today_best_score}</span>
+            <span className={`text-[10px] font-bold ${isScoreGoalMet ? 'text-green-200' : 'text-blue-300'}`}>/ {goals.daily_score_target}</span>
+          </div>
+          <div className="mt-4 h-1.5 w-full bg-black/10 rounded-full overflow-hidden">
+            <div className={`h-full transition-all duration-1000 ${isScoreGoalMet ? 'bg-white' : 'bg-acamp-yellow'}`} style={{ width: `${scorePercent}%` }} />
           </div>
         </div>
-        <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 flex flex-col gap-4">
-          <div className="bg-blue-50 text-blue-600 p-2.5 rounded-2xl w-fit">
-            <ICONS.Calendar.type size={20} />
+
+        {/* FREQUÊNCIA */}
+        <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm">
+          <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2">Frequência</p>
+          <div className="flex items-baseline gap-1">
+            <span className="text-3xl font-black text-gray-900 tracking-tighter">{progress.week_attendance}</span>
+            <span className="text-[10px] text-gray-400 font-bold">/ {goals.weekly_attendance_target} dias</span>
           </div>
-          <div>
-            <span className="text-gray-400 text-[10px] font-black uppercase tracking-[0.2em] block mb-1">Frequência</span>
-            <p className="text-2xl font-black text-gray-900 tracking-tighter">{progress.week_attendance} <span className="text-xs opacity-30">/ {goals.weekly_attendance_target}</span></p>
-          </div>
+          <p className="text-[8px] font-black text-acamp-blue uppercase mt-3">Meta Semanal</p>
         </div>
       </div>
 
-      {/* Gráfico de Evolução */}
-      <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100">
+      {/* TIMELINE DE HOJE */}
+      <div className="bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm">
+        <h3 className="text-xs font-black text-gray-800 uppercase tracking-widest flex items-center gap-2 mb-6">
+          <Clock size={16} className="text-acamp-blue" /> Sessões de Hoje
+        </h3>
+        <div className="space-y-3">
+          {todaySessions.length > 0 ? todaySessions.map((session, idx) => (
+            <div key={idx} className="flex items-center justify-between p-4 bg-gray-50/50 rounded-2xl border border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-acamp-blue">
+                  <TargetIcon size={14} />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-gray-800">{session.score} Pontos</p>
+                  <p className="text-[9px] text-gray-400 font-bold uppercase">{session.distance}m • {new Date(session.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+              </div>
+              <TrendingUp size={14} className="text-acamp-blue opacity-30" />
+            </div>
+          )) : (
+            <div className="py-6 text-center">
+              <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Nenhuma sessão técnica hoje</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* GRÁFICO */}
+      <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h3 className="font-black text-gray-800 uppercase text-xs tracking-wider">Evolução da Semana</h3>
-            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Histórico de pontuação</p>
+            <h3 className="font-black text-gray-800 uppercase text-xs tracking-wider">Evolução Técnica</h3>
+            <p className="text-[9px] text-gray-400 font-bold uppercase">Média: {weeklyAvg} pts</p>
           </div>
-          <span className="bg-acamp-light text-acamp-blue text-[9px] font-black uppercase px-3 py-1.5 rounded-xl border border-acamp-blue/5">7 dias</span>
+          <TrendingUp className="text-acamp-blue" size={20} />
         </div>
-        <div className="h-48 w-full">
+        <div className="h-44 w-full">
           {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f5" />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 700}} 
-                />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 9, fill: '#cbd5e1', fontWeight: 800}} />
                 <YAxis hide domain={['auto', 'auto']} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', fontWeight: 'bold' }}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="score" 
-                  stroke="#004A99" 
-                  strokeWidth={4} 
-                  dot={{ r: 6, fill: '#004A99', strokeWidth: 3, stroke: '#fff' }} 
-                  activeDot={{ r: 8, strokeWidth: 0 }}
-                />
+                <Tooltip contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', fontSize: '10px', fontWeight: 'bold' }} />
+                <Line type="monotone" dataKey="score" stroke="#004A99" strokeWidth={4} dot={{ r: 4, fill: '#004A99', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6, fill: '#FFD700' }} />
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-gray-300 border-2 border-dashed border-gray-50 rounded-[2rem]">
-              <div className="opacity-20 mb-2">{ICONS.Target}</div>
-              <span className="text-[10px] font-black uppercase tracking-widest">Sem treinos registrados</span>
+            <div className="h-full flex items-center justify-center text-gray-300 border-2 border-dashed border-gray-50 rounded-[2rem]">
+              <span className="text-[9px] font-black uppercase tracking-widest opacity-40">Aguardando dados</span>
             </div>
           )}
         </div>

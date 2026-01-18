@@ -2,7 +2,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Profile } from '../types';
-import { ICONS } from '../constants';
 import Logo from './Logo';
 
 interface HeaderProps {
@@ -10,7 +9,7 @@ interface HeaderProps {
   onLogout: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
+const Header: React.FC<HeaderProps> = ({ user }) => {
   return (
     <header className="bg-acamp-blue text-white p-4 shadow-md sticky top-0 z-50 border-b border-acamp-dark/30">
       <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -20,11 +19,6 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
         </Link>
 
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-acamp-dark px-4 py-1.5 rounded-full border border-acamp-yellow/30 shadow-inner">
-            <span className="text-acamp-yellow font-black text-xs tracking-tighter">{user.brotocoin_balance}</span>
-            <span className="text-acamp-yellow scale-90">{ICONS.Coins}</span>
-          </div>
-          
           <Link to="/profile" className="flex items-center gap-2 active:scale-90 transition-transform">
             <img 
               src={user.avatar_url || "https://picsum.photos/100/100"} 

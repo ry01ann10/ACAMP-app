@@ -15,10 +15,8 @@ export interface Profile {
   email: string;
   category: Category;
   role: Role;
-  brotocoin_balance: number; // Nome real da coluna no Supabase
   avatar_url?: string;
   today_shots?: number;
-  last_redemptions?: Record<string, string>;
 }
 
 export interface ShotHistoryItem {

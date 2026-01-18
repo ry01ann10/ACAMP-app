@@ -1,17 +1,14 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ICONS } from '../constants';
-import { Category, GlobalGoals, AthleteData, TrainingPlan } from '../types';
-import { ChevronLeft, ChevronRight, X, Trophy, Target, Coins, Dumbbell, Calendar, Info, CheckCircle2, UserPlus, Send } from 'lucide-react';
-// Fix: Added missing import for Logo component
-import Logo from './Logo';
+import { GlobalGoals, AthleteData, TrainingPlan, Role } from '../types';
+import { ChevronRight, X, Target, Dumbbell, CheckCircle2, Search, Save, Plus, Users, Check, Activity, TrendingUp, Users2, Zap, ArrowRight } from 'lucide-react';
 
 interface CoachDashboardProps {
   athletes: AthleteData[];
   onUpdateGoals: (goals: Partial<GlobalGoals>) => void;
   onUpdateIndividualGoals: (athleteId: string, goals: AthleteData['individual_goals']) => void;
-  onAwardCoins: (athleteId: string | 'all', amount: number) => void;
-  onAddTraining: (plan: Omit<TrainingPlan, 'id' | 'completed' | 'created_at'>) => void;
+  onAddTraining: (plan: any) => void;
   currentGoals: GlobalGoals;
 }
 
@@ -19,476 +16,354 @@ const CoachDashboard: React.FC<CoachDashboardProps> = ({
   athletes, 
   onUpdateGoals, 
   onUpdateIndividualGoals,
-  onAwardCoins, 
   onAddTraining, 
   currentGoals 
 }) => {
-  const [filter, setFilter] = useState<string>('');
-  const [activeModal, setActiveModal] = useState<'meta_picker' | 'award' | 'training' | 'ranking' | 'athlete_detail' | 'attendance_today' | null>(null);
-  const [viewingAthlete, setViewingAthlete] = useState<AthleteData | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeModal, setActiveModal] = useState<'meta_picker' | 'training' | 'athlete_list' | null>(null);
 
-  // Estados para formulários
-  const [awardAmount, setAwardAmount] = useState<number>(10);
-  const [selectedAthleteId, setSelectedAthleteId] = useState<string | 'all'>('all');
+  // Estados para Metas
+  const [targetType, setTargetType] = useState<'global' | string>('global');
+  const [tempGoals, setTempGoals] = useState({
+    daily_score: currentGoals.daily_score_target,
+    daily_shots: currentGoals.daily_shots_target,
+    weekly_attendance: currentGoals.weekly_attendance_target
+  });
+
+  // Estados para Novo Treino
   const [newTraining, setNewTraining] = useState({
     title: '',
     description: '',
-    athlete_id: 'all',
     intensity: 'Média' as const,
     duration: '30 min'
   });
+  const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>(['all']);
 
-  const filteredAthletes = athletes.filter(a => 
-    a.name.toLowerCase().includes(filter.toLowerCase())
-  ).sort((a, b) => a.name.localeCompare(b.name));
+  useEffect(() => {
+    if (targetType === 'global') {
+      setTempGoals({
+        daily_score: currentGoals.daily_score_target,
+        daily_shots: currentGoals.daily_shots_target,
+        weekly_attendance: currentGoals.weekly_attendance_target
+      });
+    } else {
+      const athlete = athletes.find(a => a.id === targetType);
+      if (athlete?.individual_goals) {
+        setTempGoals({
+          daily_score: athlete.individual_goals.daily_score || currentGoals.daily_score_target,
+          daily_shots: athlete.individual_goals.daily_shots || currentGoals.daily_shots_target,
+          weekly_attendance: athlete.individual_goals.weekly_attendance || currentGoals.weekly_attendance_target
+        });
+      }
+    }
+  }, [targetType, athletes, currentGoals]);
 
-  const sortedByCoins = [...athletes].sort((a, b) => b.brotocoin_balance - a.brotocoin_balance);
-  
-  const todayStr = new Date().toISOString().split('T')[0];
-  const presentAthletes = athletes.filter(a => 
-    a.attendance_history.some(d => d === todayStr)
-  );
-
-  const handleAward = () => {
-    onAwardCoins(selectedAthleteId, awardAmount);
-    setActiveModal(null);
-    const targetName = selectedAthleteId === 'all' ? 'toda a equipe' : athletes.find(a => a.id === selectedAthleteId)?.name;
-    // Feedback via App.tsx awardCoins
+  const toggleRecipient = (id: string) => {
+    if (id === 'all') {
+      setSelectedRecipientIds(['all']);
+    } else {
+      const withoutAll = selectedRecipientIds.filter(i => i !== 'all');
+      if (withoutAll.includes(id)) {
+        const next = withoutAll.filter(i => i !== id);
+        setSelectedRecipientIds(next.length === 0 ? ['all'] : next);
+      } else {
+        setSelectedRecipientIds([...withoutAll, id]);
+      }
+    }
   };
 
-  const handleAddTraining = () => {
+  const handleSaveGoals = () => {
+    if (targetType === 'global') {
+      onUpdateGoals({
+        daily_score_target: tempGoals.daily_score,
+        daily_shots_target: tempGoals.daily_shots,
+        weekly_attendance_target: tempGoals.weekly_attendance
+      });
+    } else {
+      onUpdateIndividualGoals(targetType, {
+        daily_score: tempGoals.daily_score,
+        daily_shots: tempGoals.daily_shots,
+        weekly_attendance: tempGoals.weekly_attendance
+      });
+    }
+    setActiveModal(null);
+  };
+
+  const handleCreateTraining = () => {
     if (!newTraining.title || !newTraining.description) {
-      alert("Preencha título e descrição.");
+      alert("Título e descrição são obrigatórios.");
       return;
     }
-    onAddTraining(newTraining);
+
+    // Se "Equipe Inteira" estiver selecionada, criamos um registro para cada atleta individualmente
+    // Isso garante que cada atleta possa marcar seu treino como concluído sem afetar os demais.
+    if (selectedRecipientIds.includes('all')) {
+      const batchPlans = athletes
+        .filter(a => a.role === Role.ATLETA) // Filtra para enviar apenas para atletas
+        .map(athlete => ({
+          ...newTraining,
+          athlete_id: athlete.id
+        }));
+      
+      onAddTraining(batchPlans);
+    } else {
+      // Caso contrário, enviamos apenas para os selecionados
+      const individualPlans = selectedRecipientIds.map(recipientId => ({
+        ...newTraining,
+        athlete_id: recipientId
+      }));
+      onAddTraining(individualPlans);
+    }
+
     setActiveModal(null);
-    setNewTraining({ title: '', description: '', athlete_id: 'all', intensity: 'Média', duration: '30 min' });
+    setNewTraining({ title: '', description: '', intensity: 'Média', duration: '30 min' });
+    setSelectedRecipientIds(['all']);
   };
 
-  const openAthleteDetail = (athlete: AthleteData) => {
-    setViewingAthlete(athlete);
-    setActiveModal('athlete_detail');
-  };
+  const todayStr = new Date().toISOString().split('T')[0];
+  const presentAthletes = athletes.filter(a => a.attendance_history.includes(todayStr));
+  
+  const recentSessions = athletes
+    .flatMap(a => a.history.map(h => ({ ...h, athleteName: a.name })))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 5);
 
-  const updateAthleteGoal = (athleteId: string, field: string, value: number) => {
-    const athlete = athletes.find(a => a.id === athleteId);
-    if (!athlete) return;
-    const currentGoals = athlete.individual_goals || {};
-    onUpdateIndividualGoals(athleteId, { ...currentGoals, [field]: value });
-  };
+  const filteredAthletes = athletes.filter(a => 
+    a.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
-    <div className="space-y-6 pb-12">
-      <div className="flex flex-col gap-4">
+    <div className="space-y-6 pb-20 animate-in fade-in duration-500">
+      <div className="flex flex-col gap-1 px-1">
         <h1 className="text-2xl font-black text-gray-900 tracking-tighter uppercase">Painel Técnico</h1>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
-            <p className="text-[10px] text-gray-400 uppercase font-black mb-1 tracking-widest">Equipe Total</p>
-            <div className="flex items-end gap-2">
-              <p className="text-3xl font-black text-acamp-blue leading-none">{athletes.length}</p>
-              <span className="text-gray-400 text-[10px] font-bold pb-0.5">Atletas</span>
-            </div>
+        <div className="flex items-center gap-2">
+           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+           <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Equipe em Monitoramento</p>
+        </div>
+      </div>
+
+      {/* METRICAS CHAVE */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <button 
+          onClick={() => setActiveModal('athlete_list')}
+          className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100 text-left hover:border-acamp-blue transition-all active:scale-95 group"
+        >
+          <p className="text-[9px] text-gray-400 uppercase font-black tracking-widest mb-1 group-hover:text-acamp-blue">Squad Arqueiros</p>
+          <div className="flex items-center gap-2">
+             <Users2 size={16} className="text-acamp-blue" />
+             <p className="text-2xl font-black text-gray-900">{athletes.length}</p>
+             <ArrowRight size={14} className="text-gray-200 ml-auto" />
           </div>
-          <button 
-            onClick={() => setActiveModal('attendance_today')}
-            className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100 text-left hover:bg-acamp-light/30 transition-all active:scale-95 group"
-          >
-            <div className="flex justify-between items-start">
-              <p className="text-[10px] text-gray-400 uppercase font-black mb-1 tracking-widest">No Clube Hoje</p>
-              <div className="text-acamp-blue scale-75 group-hover:translate-x-1 transition-transform">{ICONS.ChevronRight}</div>
-            </div>
-            <div className="flex items-end gap-2">
-              <p className="text-3xl font-black text-green-600 leading-none">{presentAthletes.length}</p>
-              <span className="text-gray-400 text-[10px] font-bold pb-0.5">Presentes</span>
-            </div>
-          </button>
-          <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
-            <p className="text-[10px] text-gray-400 uppercase font-black mb-1 tracking-widest">Top Arqueiro</p>
-            <p className="text-xl font-black text-acamp-blue truncate leading-tight">
-              {sortedByCoins[0]?.name?.split(' ')[0] || '---'}
-              <span className="text-[10px] text-acamp-yellow ml-2">{sortedByCoins[0]?.brotocoin_balance} BTC</span>
-            </p>
+        </button>
+        <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-gray-100">
+          <p className="text-[9px] text-gray-400 uppercase font-black tracking-widest mb-1">Presença Hoje</p>
+          <div className="flex items-center gap-2">
+             <CheckCircle2 size={16} className="text-green-500" />
+             <p className="text-2xl font-black text-gray-900">{presentAthletes.length}</p>
           </div>
         </div>
       </div>
 
-      <div className="bg-acamp-blue text-white rounded-[2.5rem] p-8 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
-          <Logo size="lg" showText={false} />
+      {/* MONITORAMENTO DE VOLUME (REAL-TIME) */}
+      <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-gray-100">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xs font-black text-gray-800 uppercase tracking-widest flex items-center gap-2">
+            <Zap size={16} className="text-acamp-blue" /> Volume Diário do Squad
+          </h3>
         </div>
-        <h2 className="text-xl font-black mb-6 uppercase tracking-widest">Ações Rápidas</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <button onClick={() => setActiveModal('meta_picker')} className="bg-white/10 hover:bg-white/20 p-5 rounded-2xl flex flex-col items-center gap-3 border border-white/10 transition-all active:scale-95 group">
-            <div className="bg-acamp-yellow text-acamp-blue p-3 rounded-xl group-hover:rotate-12 transition-transform"><Target size={24} /></div>
-            <span className="text-[9px] font-black uppercase tracking-widest text-center">Metas</span>
-          </button>
-          <button onClick={() => setActiveModal('award')} className="bg-white/10 hover:bg-white/20 p-5 rounded-2xl flex flex-col items-center gap-3 border border-white/10 transition-all active:scale-95 group">
-            <div className="bg-acamp-yellow text-acamp-blue p-3 rounded-xl group-hover:scale-110 transition-transform"><Coins size={24} /></div>
-            <span className="text-[9px] font-black uppercase tracking-widest text-center">Premiar</span>
-          </button>
-          <button onClick={() => setActiveModal('training')} className="bg-white/10 hover:bg-white/20 p-5 rounded-2xl flex flex-col items-center gap-3 border border-white/10 transition-all active:scale-95 group">
-            <div className="bg-acamp-yellow text-acamp-blue p-3 rounded-xl group-hover:-rotate-12 transition-transform"><Dumbbell size={24} /></div>
-            <span className="text-[9px] font-black uppercase tracking-widest text-center">Treinos</span>
-          </button>
-          <button onClick={() => setActiveModal('ranking')} className="bg-white/10 hover:bg-white/20 p-5 rounded-2xl flex flex-col items-center gap-3 border border-white/10 transition-all active:scale-95 group">
-            <div className="bg-acamp-yellow text-acamp-blue p-3 rounded-xl group-hover:translate-y-[-4px] transition-transform"><Trophy size={24} /></div>
-            <span className="text-[9px] font-black uppercase tracking-widest text-center">Ranking</span>
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-8 border-b border-gray-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h3 className="text-xl font-black text-gray-800 tracking-tighter uppercase">Gestão da Equipe</h3>
-            <p className="text-xs text-gray-400 font-medium">Filtre e gerencie o progresso dos seus arqueiros</p>
-          </div>
-          <div className="relative">
-            <input 
-              type="text" 
-              placeholder="Pesquisar..." 
-              className="w-full sm:w-64 bg-gray-50 border border-gray-100 rounded-2xl px-5 py-3 text-xs font-bold focus:ring-2 focus:ring-acamp-blue outline-none transition-all" 
-              value={filter} 
-              onChange={(e) => setFilter(e.target.value)} 
-            />
-          </div>
-        </div>
-
-        <div className="overflow-x-auto no-scrollbar">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-gray-50/50 text-[10px] uppercase text-gray-400 font-black tracking-[0.2em]">
-                <th className="px-8 py-5">Nome do Arqueiro</th>
-                <th className="px-8 py-5">Volume Hoje</th>
-                <th className="px-8 py-5 text-center">Saldo BTC</th>
-                <th className="px-8 py-5">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {filteredAthletes.map(athlete => (
-                <tr key={athlete.id} className="hover:bg-gray-50/30 transition-colors group">
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-2xl bg-acamp-blue/5 flex items-center justify-center text-acamp-blue font-black text-sm border border-acamp-blue/5">
-                        {(athlete.name || 'A').charAt(0)}
-                      </div>
-                      <div>
-                        <span className="text-sm font-black text-gray-800 block leading-tight">{athlete.name || 'Sem nome'}</span>
-                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{athlete.category}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    <span className="text-sm font-black text-acamp-blue">{athlete.today_shots || 0} <span className="text-[10px] opacity-50 ml-0.5">fl</span></span>
-                  </td>
-                  <td className="px-8 py-5 text-center">
-                    <div className="inline-flex items-center gap-1.5 bg-acamp-yellow/10 px-3 py-1 rounded-full border border-acamp-yellow/20">
-                      <span className="text-xs font-black text-acamp-blue">{athlete.brotocoin_balance}</span>
-                      <Coins size={10} className="text-acamp-yellow" />
-                    </div>
-                  </td>
-                  <td className="px-8 py-5">
-                    <button 
-                      onClick={() => openAthleteDetail(athlete)} 
-                      className="bg-acamp-light text-acamp-blue text-[9px] font-black uppercase px-4 py-2 rounded-xl border border-acamp-blue/10 hover:bg-acamp-blue hover:text-white transition-all active:scale-95"
-                    >
-                      Histórico
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* MODAL: PREMIAR */}
-      {activeModal === 'award' && (
-        <div className="fixed inset-0 bg-acamp-blue/90 backdrop-blur-md z-[110] flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-sm rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in duration-300">
-            <div className="bg-acamp-blue p-8 text-white flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="bg-acamp-yellow text-acamp-blue p-2 rounded-xl"><Coins size={20} /></div>
-                <h3 className="font-black uppercase tracking-widest text-sm">Enviar Prêmios</h3>
-              </div>
-              <button onClick={() => setActiveModal(null)} className="opacity-50 hover:opacity-100 transition-opacity"><X size={24} /></button>
-            </div>
-            <div className="p-8 space-y-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Destinatário</label>
-                <select 
-                  className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 font-bold text-sm outline-none focus:ring-2 focus:ring-acamp-blue"
-                  value={selectedAthleteId}
-                  onChange={e => setSelectedAthleteId(e.target.value)}
-                >
-                  <option value="all">Toda a Equipe</option>
-                  {athletes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </div>
-
-              <div className="text-center space-y-3">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Valor do Bônus</label>
-                <div className="flex items-center justify-center gap-6">
-                  <button onClick={() => setAwardAmount(Math.max(1, awardAmount - 5))} className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center text-xl font-black active:scale-90">-</button>
-                  <div className="flex flex-col">
-                    <span className="text-4xl font-black text-acamp-blue tracking-tighter">{awardAmount}</span>
-                    <span className="text-[8px] font-black text-acamp-yellow uppercase tracking-[0.2em]">BTC</span>
-                  </div>
-                  <button onClick={() => setAwardAmount(awardAmount + 5)} className="w-12 h-12 rounded-2xl bg-gray-100 flex items-center justify-center text-xl font-black active:scale-90">+</button>
+        <div className="space-y-4">
+          {athletes.slice(0, 4).map(athlete => {
+            const target = athlete.individual_goals?.daily_shots || currentGoals.daily_shots_target;
+            const progress = Math.min((athlete.today_shots / target) * 100, 100);
+            return (
+              <div key={athlete.id} className="space-y-1.5">
+                <div className="flex justify-between text-[10px] font-black uppercase">
+                  <span className="text-gray-700">{athlete.name}</span>
+                  <span className={progress >= 100 ? 'text-green-500' : 'text-acamp-blue'}>
+                    {athlete.today_shots} / {target}
+                  </span>
+                </div>
+                <div className="h-1.5 w-full bg-gray-50 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full transition-all duration-1000 ${progress >= 100 ? 'bg-green-500' : 'bg-acamp-blue'}`} 
+                    style={{ width: `${progress}%` }}
+                  />
                 </div>
               </div>
+            );
+          })}
+        </div>
+      </div>
 
-              <button 
-                onClick={handleAward} 
-                className="w-full bg-acamp-yellow text-acamp-blue py-5 rounded-2xl font-black text-xs uppercase tracking-[0.25em] shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2"
-              >
-                <Send size={14} /> Confirmar Envio
+      {/* AÇÕES DE GESTÃO */}
+      <div className="bg-acamp-blue text-white rounded-[3rem] p-8 shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none rotate-12">
+          <Activity size={120} />
+        </div>
+        <h2 className="text-lg font-black mb-6 uppercase tracking-widest">Gestão Técnica</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <button onClick={() => setActiveModal('meta_picker')} className="bg-white/10 hover:bg-white/20 p-6 rounded-[2.5rem] flex flex-col items-center gap-4 border border-white/10 transition-all active:scale-95">
+            <div className="bg-acamp-yellow text-acamp-blue p-4 rounded-2xl shadow-lg"><Target size={28} /></div>
+            <span className="text-[10px] font-black uppercase tracking-widest">Ajustar Metas</span>
+          </button>
+          <button onClick={() => setActiveModal('training')} className="bg-white/10 hover:bg-white/20 p-6 rounded-[2.5rem] flex flex-col items-center gap-4 border border-white/10 transition-all active:scale-95">
+            <div className="bg-acamp-yellow text-acamp-blue p-4 rounded-2xl shadow-lg"><Dumbbell size={28} /></div>
+            <span className="text-[10px] font-black uppercase tracking-widest">Prescrever</span>
+          </button>
+        </div>
+      </div>
+
+      {/* FEED DE ATIVIDADE */}
+      <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-gray-100">
+        <h3 className="text-xs font-black text-gray-800 uppercase tracking-widest flex items-center gap-2 mb-6">
+          <TrendingUp size={16} className="text-acamp-blue" /> Atividade Recente
+        </h3>
+        <div className="space-y-4">
+          {recentSessions.map((session, idx) => (
+            <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-3xl border border-gray-100 hover:border-acamp-blue/30 transition-colors">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center font-black text-acamp-blue text-xs border border-gray-100 uppercase">
+                  {session.athleteName.charAt(0)}
+                </div>
+                <div>
+                  <p className="text-[11px] font-black text-gray-800">{session.athleteName}</p>
+                  <p className="text-[9px] text-gray-400 font-bold uppercase">{session.distance}m • {new Date(session.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-black text-acamp-blue leading-none">{session.score}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* MODAL LISTA DE ATLETAS */}
+      {activeModal === 'athlete_list' && (
+        <div className="fixed inset-0 bg-acamp-blue/90 backdrop-blur-md z-[110] flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-2xl rounded-[3rem] max-h-[85vh] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in duration-300">
+            <div className="bg-acamp-blue p-8 text-white flex justify-between items-center shrink-0">
+              <h3 className="font-black uppercase tracking-widest text-sm">Squad ACAMP</h3>
+              <button onClick={() => setActiveModal(null)} className="hover:rotate-90 transition-transform"><X size={24} /></button>
+            </div>
+            <div className="p-6 border-b border-gray-50 shrink-0">
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={16} />
+                <input 
+                  type="text" 
+                  placeholder="Buscar pelo nome..." 
+                  className="w-full bg-gray-50 p-4 pl-12 rounded-2xl font-bold text-xs outline-none"
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="p-6 overflow-y-auto no-scrollbar space-y-3">
+              {filteredAthletes.map(athlete => {
+                const target = athlete.individual_goals?.daily_shots || currentGoals.daily_shots_target;
+                const progress = Math.min((athlete.today_shots / target) * 100, 100);
+                return (
+                  <div key={athlete.id} className="p-5 bg-gray-50 rounded-[2rem] border border-gray-100 flex items-center justify-between group hover:border-acamp-blue/30 transition-all">
+                    <div className="flex items-center gap-4">
+                      <img src={athlete.avatar_url || `https://ui-avatars.com/api/?name=${athlete.name}`} className="w-12 h-12 rounded-2xl border-2 border-white shadow-sm" alt={athlete.name} />
+                      <div>
+                        <p className="text-sm font-black text-gray-900 uppercase tracking-tight">{athlete.name}</p>
+                        <p className="text-[9px] text-gray-400 font-bold uppercase">{athlete.category}</p>
+                      </div>
+                    </div>
+                    <div className="text-right min-w-[120px]">
+                      <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Volume Hoje</p>
+                      <div className="flex items-center gap-2 justify-end">
+                        <span className={`text-lg font-black ${progress >= 100 ? 'text-green-500' : 'text-acamp-blue'}`}>{athlete.today_shots}</span>
+                        <span className="text-xs text-gray-300 font-bold">/ {target}</span>
+                      </div>
+                      <div className="w-full h-1 bg-gray-200 rounded-full mt-1">
+                        <div className={`h-full transition-all duration-700 ${progress >= 100 ? 'bg-green-500' : 'bg-acamp-blue'}`} style={{ width: `${progress}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL METAS */}
+      {activeModal === 'meta_picker' && (
+        <div className="fixed inset-0 bg-acamp-blue/90 backdrop-blur-md z-[110] flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-md rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in duration-300">
+            <div className="bg-acamp-blue p-8 text-white flex justify-between items-center">
+              <h3 className="font-black uppercase tracking-widest text-sm">Metas e Frequência</h3>
+              <button onClick={() => setActiveModal(null)} className="hover:rotate-90 transition-transform"><X size={24} /></button>
+            </div>
+            <div className="p-8 space-y-6">
+              <div>
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-2">Público da Meta</label>
+                <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl font-bold text-sm outline-none" value={targetType} onChange={e => setTargetType(e.target.value)}>
+                  <option value="global">Equipe (Meta Geral)</option>
+                  <optgroup label="Metas Individuais">
+                    {athletes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </optgroup>
+                </select>
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                   <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-2">Score de Ouro (Diário)</label>
+                   <input type="number" className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl font-black text-lg outline-none" value={tempGoals.daily_score} onChange={e => setTempGoals({...tempGoals, daily_score: Number(e.target.value)})} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-2">Volume (Flechas)</label>
+                    <input type="number" className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl font-black text-lg outline-none" value={tempGoals.daily_shots} onChange={e => setTempGoals({...tempGoals, daily_shots: Number(e.target.value)})} />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-2">Frequência (Dias)</label>
+                    <input type="number" className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl font-black text-lg outline-none" value={tempGoals.weekly_attendance} onChange={e => setTempGoals({...tempGoals, weekly_attendance: Number(e.target.value)})} />
+                  </div>
+                </div>
+              </div>
+              <button onClick={handleSaveGoals} className="w-full bg-acamp-blue text-white py-5 rounded-[1.8rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl hover:bg-acamp-dark transition-all active:scale-95 flex items-center justify-center gap-2">
+                <Save size={16} /> Salvar Prescrição
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL: METAS INDIVIDUAIS */}
-      {activeModal === 'meta_picker' && (
-        <div className="fixed inset-0 bg-acamp-blue/90 backdrop-blur-md z-[110] flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-2xl rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in duration-300">
-            <div className="bg-acamp-blue p-8 text-white flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="bg-acamp-yellow text-acamp-blue p-2 rounded-xl"><Target size={20} /></div>
-                <h3 className="font-black uppercase tracking-widest text-sm">Metas Individuais</h3>
-              </div>
-              <button onClick={() => setActiveModal(null)}><X size={24} /></button>
-            </div>
-            <div className="p-8 max-h-[70vh] overflow-y-auto no-scrollbar space-y-4">
-              <p className="text-xs text-gray-400 font-medium mb-6">Ajuste as metas para desafiar cada arqueiro. As metas são salvas ao sair do campo.</p>
-              {athletes.map(a => (
-                <div key={a.id} className="p-6 border border-gray-100 rounded-[2rem] bg-gray-50/50 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center font-black text-xs text-acamp-blue">{(a.name || 'A').charAt(0)}</div>
-                    <p className="font-black text-gray-800 text-sm">{a.name}</p>
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-[8px] font-black uppercase text-gray-400 tracking-widest">Score Meta</label>
-                      <input 
-                        type="number" 
-                        className="w-full p-3 bg-white rounded-xl border border-gray-100 text-xs font-black text-acamp-blue focus:ring-2 focus:ring-acamp-blue outline-none"
-                        defaultValue={a.individual_goals?.daily_score || currentGoals.daily_score_target}
-                        onBlur={(e) => updateAthleteGoal(a.id, 'daily_score', Number(e.target.value))}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[8px] font-black uppercase text-gray-400 tracking-widest">Tiros Meta</label>
-                      <input 
-                        type="number" 
-                        className="w-full p-3 bg-white rounded-xl border border-gray-100 text-xs font-black text-acamp-blue focus:ring-2 focus:ring-acamp-blue outline-none"
-                        defaultValue={a.individual_goals?.daily_shots || currentGoals.daily_shots_target}
-                        onBlur={(e) => updateAthleteGoal(a.id, 'daily_shots', Number(e.target.value))}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[8px] font-black uppercase text-gray-400 tracking-widest">Frequência</label>
-                      <input 
-                        type="number" 
-                        className="w-full p-3 bg-white rounded-xl border border-gray-100 text-xs font-black text-acamp-blue focus:ring-2 focus:ring-acamp-blue outline-none"
-                        defaultValue={a.individual_goals?.weekly_attendance || currentGoals.weekly_attendance_target}
-                        onBlur={(e) => updateAthleteGoal(a.id, 'weekly_attendance', Number(e.target.value))}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="p-8 bg-gray-50 text-center">
-              <button onClick={() => setActiveModal(null)} className="bg-acamp-blue text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all">Finalizar Edição</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: RANKING */}
-      {activeModal === 'ranking' && (
-        <div className="fixed inset-0 bg-acamp-blue/90 backdrop-blur-md z-[110] flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-md rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in duration-300">
-            <div className="bg-acamp-blue p-8 text-white flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="bg-acamp-yellow text-acamp-blue p-2 rounded-xl"><Trophy size={20} /></div>
-                <h3 className="font-black uppercase tracking-widest text-sm">Arqueiros de Elite</h3>
-              </div>
-              <button onClick={() => setActiveModal(null)}><X size={24} /></button>
-            </div>
-            <div className="p-4 space-y-2 max-h-[60vh] overflow-y-auto no-scrollbar">
-              {sortedByCoins.map((a, idx) => (
-                <div key={a.id} className={`flex items-center justify-between p-5 rounded-2xl border transition-all ${idx === 0 ? 'bg-yellow-50 border-acamp-yellow shadow-sm' : 'bg-gray-50 border-gray-100'}`}>
-                  <div className="flex items-center gap-4">
-                    <span className={`text-lg font-black ${idx === 0 ? 'text-acamp-yellow' : idx === 1 ? 'text-gray-400' : idx === 2 ? 'text-orange-400' : 'text-gray-300'}`}>{idx + 1}º</span>
-                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-white border border-gray-100">
-                      <img src={a.avatar_url || `https://ui-avatars.com/api/?name=${a.name}&background=random`} alt={a.name} className="w-full h-full object-cover" />
-                    </div>
-                    <span className="font-black text-gray-800 text-sm">{a.name}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-black text-acamp-blue">{a.brotocoin_balance}</span>
-                    <Coins size={12} className="text-acamp-yellow" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: NOVO TREINO */}
+      {/* MODAL TREINO */}
       {activeModal === 'training' && (
         <div className="fixed inset-0 bg-acamp-blue/90 backdrop-blur-md z-[110] flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-lg rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in duration-300">
-            <div className="bg-acamp-blue p-8 text-white flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="bg-acamp-yellow text-acamp-blue p-2 rounded-xl"><Dumbbell size={20} /></div>
-                <h3 className="font-black uppercase tracking-widest text-sm">Novo Treino Físico</h3>
-              </div>
-              <button onClick={() => setActiveModal(null)}><X size={24} /></button>
+          <div className="bg-white w-full max-w-md rounded-[3rem] max-h-[90vh] flex flex-col overflow-hidden shadow-2xl animate-in zoom-in duration-300">
+            <div className="bg-acamp-blue p-8 text-white flex justify-between items-center shrink-0">
+              <h3 className="font-black uppercase tracking-widest text-sm">Nova Prescrição</h3>
+              <button onClick={() => setActiveModal(null)} className="hover:rotate-90 transition-transform"><X size={24} /></button>
             </div>
-            <div className="p-8 space-y-4">
-              <input 
-                placeholder="Título do Treino" 
-                className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-acamp-blue"
-                value={newTraining.title}
-                onChange={e => setNewTraining({...newTraining, title: e.target.value})}
-              />
-              <textarea 
-                placeholder="Descreva os exercícios e repetições..." 
-                className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl h-32 font-medium text-sm outline-none focus:ring-2 focus:ring-acamp-blue"
-                value={newTraining.description}
-                onChange={e => setNewTraining({...newTraining, description: e.target.value})}
-              />
+            <div className="p-8 space-y-4 overflow-y-auto no-scrollbar">
+              <input placeholder="Título do Treino" className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl font-bold text-sm outline-none" value={newTraining.title} onChange={e => setNewTraining({...newTraining, title: e.target.value})} />
+              <textarea placeholder="Instruções..." className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl h-24 font-medium text-sm outline-none" value={newTraining.description} onChange={e => setNewTraining({...newTraining, description: e.target.value})} />
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Destinatários</label>
+                <div className="grid grid-cols-1 gap-1.5 max-h-40 overflow-y-auto p-2 bg-gray-50 rounded-2xl border border-gray-100">
+                  <button onClick={() => toggleRecipient('all')} className={`flex items-center justify-between p-3 rounded-xl border font-black text-[10px] uppercase transition-all ${selectedRecipientIds.includes('all') ? 'bg-acamp-blue text-white border-acamp-blue' : 'bg-white border-gray-100 text-gray-400'}`}>
+                    Toda a Equipe {selectedRecipientIds.includes('all') && <Check size={14} />}
+                  </button>
+                  {athletes.map(a => (
+                    <button key={a.id} onClick={() => toggleRecipient(a.id)} className={`flex items-center justify-between p-3 rounded-xl border font-black text-[10px] uppercase transition-all ${selectedRecipientIds.includes(a.id) ? 'bg-acamp-blue text-white border-acamp-blue' : 'bg-white border-gray-100 text-gray-400'}`}>
+                      {a.name} {selectedRecipientIds.includes(a.id) && <Check size={14} />}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-4">
-                <select 
-                  className="p-4 bg-gray-50 border border-gray-100 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-acamp-blue"
-                  value={newTraining.intensity}
-                  onChange={e => setNewTraining({...newTraining, intensity: e.target.value as any})}
-                >
+                <input placeholder="Duração" className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl font-bold text-sm" value={newTraining.duration} onChange={e => setNewTraining({...newTraining, duration: e.target.value})} />
+                <select className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl font-bold text-sm outline-none" value={newTraining.intensity} onChange={e => setNewTraining({...newTraining, intensity: e.target.value as any})}>
                   <option>Baixa</option>
                   <option>Média</option>
                   <option>Alta</option>
                 </select>
-                <input 
-                  placeholder="Ex: 45 min" 
-                  className="p-4 bg-gray-50 border border-gray-100 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-acamp-blue"
-                  value={newTraining.duration}
-                  onChange={e => setNewTraining({...newTraining, duration: e.target.value})}
-                />
               </div>
-              <select 
-                className="w-full p-4 bg-gray-50 border border-gray-100 rounded-2xl font-bold text-sm outline-none focus:ring-2 focus:ring-acamp-blue"
-                value={newTraining.athlete_id}
-                onChange={e => setNewTraining({...newTraining, athlete_id: e.target.value})}
-              >
-                <option value="all">Toda a Equipe</option>
-                {athletes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-              <button 
-                onClick={handleAddTraining} 
-                className="w-full bg-acamp-blue text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl active:scale-95 transition-all mt-4"
-              >
-                Publicar Treino
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: DETALHES DO ATLETA */}
-      {activeModal === 'athlete_detail' && viewingAthlete && (
-        <div className="fixed inset-0 bg-acamp-blue/95 backdrop-blur-md z-[110] flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-2xl rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in duration-300">
-            <div className="bg-acamp-blue p-8 text-white flex justify-between items-center">
-              <div className="flex items-center gap-4">
-                 <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center font-black border border-white/20">{(viewingAthlete.name || 'A').charAt(0)}</div>
-                 <div>
-                   <h3 className="font-black text-xl tracking-tighter uppercase">{viewingAthlete.name}</h3>
-                   <span className="text-[10px] font-bold text-blue-200 uppercase tracking-widest">{viewingAthlete.category}</span>
-                 </div>
-              </div>
-              <button onClick={() => setActiveModal(null)} className="opacity-50 hover:opacity-100 transition-opacity"><X size={28} /></button>
-            </div>
-            <div className="p-8 space-y-8 overflow-y-auto max-h-[75vh] no-scrollbar">
-              <div className="grid grid-cols-3 gap-4">
-                 <div className="bg-gray-50 p-6 rounded-[2rem] text-center border border-gray-100">
-                    <p className="text-[9px] font-black text-gray-400 uppercase mb-2 tracking-widest">Saldo</p>
-                    <p className="text-2xl font-black text-acamp-blue">{viewingAthlete.brotocoin_balance}</p>
-                 </div>
-                 <div className="bg-gray-50 p-6 rounded-[2rem] text-center border border-gray-100">
-                    <p className="text-[9px] font-black text-gray-400 uppercase mb-2 tracking-widest">Tiros Hoje</p>
-                    <p className="text-2xl font-black text-acamp-blue">{viewingAthlete.today_shots}</p>
-                 </div>
-                 <div className="bg-gray-50 p-6 rounded-[2rem] text-center border border-gray-100">
-                    <p className="text-[9px] font-black text-gray-400 uppercase mb-2 tracking-widest">Presença</p>
-                    <p className="text-2xl font-black text-acamp-blue">{viewingAthlete.monthly_attendance}</p>
-                 </div>
-              </div>
-
-              <div>
-                 <h4 className="font-black text-gray-800 text-xs uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                   <Calendar size={14} className="text-acamp-blue" /> Histórico de Presença
-                 </h4>
-                 <div className="flex flex-wrap gap-2">
-                    {viewingAthlete.attendance_history.slice(-20).map((date, idx) => (
-                       <div key={idx} className="bg-acamp-blue/5 text-acamp-blue text-[9px] px-3 py-1.5 rounded-xl font-black border border-acamp-blue/10">
-                          {new Date(date).toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'})}
-                       </div>
-                    ))}
-                    {viewingAthlete.attendance_history.length === 0 && <p className="text-gray-400 text-xs italic">Nenhuma presença registrada.</p>}
-                 </div>
-              </div>
-
-              <div>
-                 <h4 className="font-black text-gray-800 text-xs uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                   <Target size={14} className="text-acamp-blue" /> Últimos Treinos Técnicos
-                 </h4>
-                 <div className="space-y-3">
-                    {viewingAthlete.history.slice(0, 5).map((h, idx) => (
-                       <div key={idx} className="flex justify-between items-center p-5 bg-gray-50 rounded-[1.5rem] border border-gray-100 group hover:border-acamp-blue transition-all">
-                          <div>
-                            <span className="text-[10px] font-black text-gray-400 uppercase block mb-0.5">{h.date}</span>
-                            <span className="text-sm font-black text-gray-800">{h.distance} Metros</span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-xl font-black text-acamp-blue tracking-tighter">{h.score} <span className="text-[10px] font-bold opacity-30">PTS</span></span>
-                          </div>
-                       </div>
-                    ))}
-                    {viewingAthlete.history.length === 0 && <p className="text-gray-400 text-xs italic">Sem histórico de tiros.</p>}
-                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: PRESENTES HOJE */}
-      {activeModal === 'attendance_today' && (
-        <div className="fixed inset-0 bg-acamp-blue/90 backdrop-blur-md z-[110] flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-md rounded-[3rem] overflow-hidden shadow-2xl animate-in zoom-in duration-300">
-            <div className="bg-acamp-blue p-8 text-white flex justify-between items-center">
-              <h3 className="font-black uppercase tracking-widest text-sm">Presentes Agora</h3>
-              <button onClick={() => setActiveModal(null)}><X size={24} /></button>
-            </div>
-            <div className="p-8 space-y-4">
-              {presentAthletes.map(a => (
-                <div key={a.id} className="flex items-center gap-4 p-4 bg-green-50 rounded-2xl border border-green-100 text-green-700">
-                  <div className="bg-green-100 p-2 rounded-xl"><CheckCircle2 size={16} /></div>
-                  <span className="font-black text-sm">{a.name}</span>
-                </div>
-              ))}
-              {presentAthletes.length === 0 && (
-                <div className="text-center py-12">
-                   <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">Ninguém assinou a presença</p>
-                   <p className="text-gray-300 text-[10px] mt-1">Os arqueiros aparecem aqui após confirmarem presença.</p>
-                </div>
-              )}
+              <button onClick={handleCreateTraining} className="w-full bg-acamp-yellow text-acamp-blue py-5 rounded-[1.8rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl mt-2">Publicar Treino</button>
             </div>
           </div>
         </div>
